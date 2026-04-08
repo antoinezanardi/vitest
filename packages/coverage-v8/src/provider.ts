@@ -518,11 +518,12 @@ function isSourceCodeIgnored(
       return true
     }
 
-    // Detect phantom branches: if the source code at the mapped position
-    // is inside a Vue SFC <template> block, it's likely a template-generated
-    // construct (like _cache conditionals) incorrectly mapped to source.
-    // Template HTML should not contain branches in coverage reports.
-    if (/^\s*<[A-Z/]/i.test(trimmed)) {
+    // Detect phantom branches where the source at the mapped position is
+    // Vue SFC template HTML. When source map drift occurs, compiled template
+    // code (like _cache conditionals) can be incorrectly mapped back to
+    // the <template> section. Template HTML elements with Vue directives
+    // (v-model, @event, :bind) should never contain branch coverage entries.
+    if (/^\s*<[A-Za-z/]/.test(trimmed) && /\s(?:v-|@|:)/.test(trimmed)) {
       return true
     }
   }
