@@ -324,7 +324,22 @@ export class V8CoverageProvider extends BaseCoverageProvider implements Coverage
         ) {
           return 'ignore-this-and-nested-nodes'
         }
+
+        // Vue compiled template cache conditionals - e.g.
+        // _cache[0] || (_cache[0] = handler(...))
+        // These are Vue's internal rendering optimizations and should not appear in coverage
+        if (
+          type === 'branch'
+          && node.type === 'LogicalExpression'
+          && node.operator === '||'
+          && node.left.type === 'MemberExpression'
+          && node.left.object.type === 'Identifier'
+          && node.left.object.name === '_cache'
+        ) {
+          return true
+        }
       },
+      ignoreSourceCode: isSourceCodeIgnored,
     },
     )
   }
@@ -480,4 +495,35 @@ function removeStartsWith(filepath: string, start: string) {
   }
 
   return filepath
+}
+
+/**
+ * Detects phantom coverage entries caused by source map position drift.
+ *
+ * When multiple Vite transform plugins chain source maps (e.g. Vue SFC compilation →
+ * esbuild → auto-import injection), accumulated position errors can cause
+ * code constructs to be attributed to wrong original source positions.
+ * This function filters out coverage entries where the mapped source code
+ * clearly doesn't match what's expected for the coverage entry type.
+ */
+function isSourceCodeIgnored(
+  code: string,
+  type: 'function' | 'statement' | 'branch',
+): boolean | void {
+  if (type === 'branch') {
+    const trimmed = code.trim()
+
+    // Empty source at mapped position indicates broken source map mapping
+    if (!trimmed) {
+      return true
+    }
+
+    // Detect phantom branches: if the source code at the mapped position
+    // is inside a Vue SFC <template> block, it's likely a template-generated
+    // construct (like _cache conditionals) incorrectly mapped to source.
+    // Template HTML should not contain branches in coverage reports.
+    if (/^\s*<[A-Z/]/i.test(trimmed)) {
+      return true
+    }
+  }
 }
